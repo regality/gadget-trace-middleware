@@ -18,7 +18,7 @@ module.exports = function (config) {
       protocol: req.protocol,
       requestHeaders: req.headers,
       xhr: req.xhr,
-      received: req.body || req.query,
+      request: req.body || req.query,
       cookies: req.cookies,
       ip: req.ip
     })
@@ -29,7 +29,7 @@ module.exports = function (config) {
       logData(config, requestId, null, requestUid, { // TODO find the real from id
         duration: seconds,
         statusCode: res.statusCode,
-        responseHeaders: res.headers,
+        responseHeaders: res.getHeaders(),
         response: body
       })
     })
