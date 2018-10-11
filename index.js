@@ -91,9 +91,9 @@ function getArgNames (fn) {
 }
 
 function logData (config, requestId, requestFromUid, requestUid, data) {
-  data.request_id = requestId
-  data.request_uid = requestUid
-  data.request_from_uid = requestFromUid
+  data.requestId = requestId
+  data.requestUid = requestUid
+  data.requestFromUid = requestFromUid
   axios({
     method: 'post',
     url: `http://${config.host}:${config.port || 4368}/request/${requestId}`,
