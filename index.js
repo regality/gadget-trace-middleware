@@ -20,7 +20,7 @@ module.exports = function (config) {
       xhr: req.xhr,
       received: req.body || req.query,
       cookies: req.cookies,
-      ip: req.ip,
+      ip: req.ip
     })
 
     res.on('finish', function () {
@@ -98,10 +98,9 @@ function logData (config, requestId, requestFromUid, requestUid, data) {
     method: 'post',
     url: `http://${config.host}:${config.port || 4368}/request/${requestId}`,
     data: data
-  })
-  .catch(() => {})
+  }).catch(() => {})
 }
 
-function durationSeconds(duration) {
+function durationSeconds (duration) {
   return duration[0] * 1e3 + duration[1] * 1e-6
 }
