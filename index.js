@@ -5,14 +5,37 @@ module.exports = function (config) {
   return function (req, res, next) {
     const requestId = req.requestId || res.locals.requestId || req.get('x-request-id') || uuid()
     const requestUid = req.requestUid || res.locals.requestUid || uuid()
+    const requestFromUid = req.requestFromUid || res.locals.requestFromUid || req.get('x-request-from-uid')
+    req.gt = {}
+    req.gadgetTrace = req.gt
     req.requestId = res.locals.requestId = requestId
     req.requestUid = res.locals.requestUid = requestUid
+    if (requestFromUid) req.requestFromUid = res.locals.requestFromUid = requestFromUid
     res.setHeader('x-request-id', requestId)
     res.setHeader('x-request-uid', requestUid)
+    if (requestFromUid) res.setHeader('x-request-from-uid', requestFromUid)
 
     const startTime = process.hrtime()
 
-    logData(config, requestId, null, requestUid, { // TODO find the real from id
+    req.gt.log = function gadgetTraceLog (data, requestUid = null) {
+      if (!requestUid) {
+        requestUid = uuid()
+      }
+      data.requestId = requestId
+      data.requestUid = requestUid
+      if (requestUid === req.requestUid) {
+        data.requestFromUid = req.requestFromUid
+      } else {
+        data.requestFromUid = req.requestUid
+      }
+      axios({
+        method: 'post',
+        url: `http://${config.host}:${config.port || 4368}/request/${requestId}`,
+        data: data
+      }).catch(() => {})
+    }
+
+    req.gt.log({
       url: req.originalUrl,
       method: req.method,
       protocol: req.protocol,
@@ -21,28 +44,30 @@ module.exports = function (config) {
       request: req.body || req.query,
       cookies: req.cookies,
       ip: req.ip
-    })
+    }, requestUid)
 
     res.on('finish', function () {
       const duration = process.hrtime(startTime)
       const seconds = durationSeconds(duration)
-      logData(config, requestId, null, requestUid, { // TODO find the real from id
+      req.gt.log({
         duration: seconds,
         statusCode: res.statusCode,
         responseHeaders: res.getHeaders(),
         response: body
-      })
+      }, requestUid)
     })
 
-    req.traceWrap = function (fn, name, depth = 0, maxDepth = 4) { // TODO call capture instead?
-      if (depth >= maxDepth) return
+    req.gt.wrap = function (fn, name, depth = 0, maxDepth = 4) {
       if (fn !== null && typeof fn === 'object') {
+        if (depth >= maxDepth) return
         Object.keys(fn).forEach(key => {
-          fn[key] = req.traceWrap(fn[key], `${name}.${key}`, depth + 1, maxDepth)
+          const wrapped = req.gt.wrap(fn[key], `${name}.${key}`, depth + 1, maxDepth)
+          if (typeof fn[key] === 'function') {
+            fn[key] = wrapped
+          }
         })
         return fn
       } else if (typeof fn === 'function') {
-        if (fn.toString().includes('getTemplate')) console.log(JSON.stringify(fn.toString()) + ',\n')
         const argNames = getArgNames(fn)
         return function () {
           const args = []
@@ -50,13 +75,13 @@ module.exports = function (config) {
           for (var i = 0; i < arguments.length || i < argNames.length; ++i) {
             args.push({ name: argNames[i], value: arguments[i] })
           }
-          // TODO support callbacks
+          // TODO support callbacks instead of assuming a promise will be returned
           let trace = (new Error()).stack
           const traceStart = process.hrtime()
           Promise.resolve(ret).then(response => {
             const duration = process.hrtime(traceStart)
             const seconds = durationSeconds(duration)
-            logData(config, requestId, requestUid, uuid(), { // TODO send/honor uuid
+            req.gt.log({
               fn: name || fn.name || 'unknown',
               args: args,
               response: response,
@@ -88,17 +113,6 @@ module.exports = function (config) {
 function getArgNames (fn) {
   // TODO handle arrow funcs without parens
   return fn.toString().split(/\(|\)/)[1].split(',').map(argName => argName.trim()).filter(v => v)
-}
-
-function logData (config, requestId, requestFromUid, requestUid, data) {
-  data.requestId = requestId
-  data.requestUid = requestUid
-  data.requestFromUid = requestFromUid
-  axios({
-    method: 'post',
-    url: `http://${config.host}:${config.port || 4368}/request/${requestId}`,
-    data: data
-  }).catch(() => {})
 }
 
 function durationSeconds (duration) {
