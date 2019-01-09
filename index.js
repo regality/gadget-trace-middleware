@@ -2,7 +2,9 @@ const axios = require('axios')
 const uuid = require('uuid').v1
 
 module.exports = function (config) {
+  const baseUrl = `http${config.https ? 's' : ''}://${config.host}:${config.port || 4368}`
   return function (req, res, next) {
+    const secretKeys = req.get('x-gt-secret-keys') ? req.get('x-gt-secret-keys').split(',') : []
     const requestId = req.requestId || res.locals.requestId || req.get('x-request-id') || uuid()
     const requestUid = req.requestUid || res.locals.requestUid || uuid()
     const requestFromUid = req.requestFromUid || res.locals.requestFromUid || req.get('x-request-from-uid')
@@ -15,7 +17,24 @@ module.exports = function (config) {
     res.setHeader('x-request-uid', requestUid)
     if (requestFromUid) res.setHeader('x-request-from-uid', requestFromUid)
 
+    if (config.secret && !secretKeys.includes(config.secret)) {
+      req.gt.wrap = () => {}
+      req.gt.log = () => {}
+      return next()
+    }
+
+    // res.setHeader('x-gt-host', baseUrl)
+    res.setHeader('x-gt-host', baseUrl.replace('192.168.65.2', 'localhost')) // todo: remove
+
     const startTime = process.hrtime()
+
+    req.gt.vars = function gadgetTraceVars (vars) {
+      let variables = []
+      for (let name in vars) {
+        variables.push({ name, value: vars[name] })
+      }
+      req.gt.log({ variables }, requestUid)
+    }
 
     req.gt.log = function gadgetTraceLog (data, requestUid = null) {
       if (!requestUid) {
@@ -28,11 +47,16 @@ module.exports = function (config) {
       } else {
         data.requestFromUid = req.requestUid
       }
+      if (config.secret) {
+        data.secret = config.secret
+      }
       axios({
         method: 'post',
-        url: `http://${config.host}:${config.port || 4368}/request/${requestId}`,
+        url: `${baseUrl}/request/${requestId}`,
         data: data
-      }).catch(() => {})
+      }).catch(() => {
+        // TODO log the failure
+      })
     }
 
     req.gt.log({
@@ -57,11 +81,13 @@ module.exports = function (config) {
       }, requestUid)
     })
 
-    req.gt.wrap = function (fn, name, depth = 0, maxDepth = 4) {
+    req.gt.wrap = function (fn, name, options = {}, maxDepth = 4, depth = 0) {
       if (fn !== null && typeof fn === 'object') {
         if (depth >= maxDepth) return
         Object.keys(fn).forEach(key => {
-          const wrapped = req.gt.wrap(fn[key], `${name}.${key}`, depth + 1, maxDepth)
+          if (options.blacklist && new RegExp(options.blacklist).test(key)) return
+          if (options.whitelist && !(new RegExp(options.whitelist).test(key))) return
+          const wrapped = req.gt.wrap(fn[key], `${name}.${key}`, options, maxDepth, depth + 1)
           if (typeof fn[key] === 'function') {
             fn[key] = wrapped
           }
