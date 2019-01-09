@@ -3,6 +3,7 @@ const uuid = require('uuid').v1
 
 module.exports = function (config) {
   const baseUrl = `http${config.https ? 's' : ''}://${config.host}:${config.port || 4368}`
+  const publicUrl = `http${config.https ? 's' : ''}://${config.publicHost || config.host}:${config.port || 4368}`
   return function (req, res, next) {
     const secretKeys = req.get('x-gt-secret-keys') ? req.get('x-gt-secret-keys').split(',') : []
     const requestId = req.requestId || res.locals.requestId || req.get('x-request-id') || uuid()
@@ -23,8 +24,7 @@ module.exports = function (config) {
       return next()
     }
 
-    // res.setHeader('x-gt-host', baseUrl)
-    res.setHeader('x-gt-host', baseUrl.replace('192.168.65.2', 'localhost')) // todo: remove
+    res.setHeader('x-gt-host', publicUrl)
 
     const startTime = process.hrtime()
 
